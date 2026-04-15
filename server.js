@@ -147,6 +147,10 @@ function normalizeSectionParam(raw) {
   return s;
 }
 
+app.get("/health", (_req, res) => {
+  res.status(200).type("text/plain").send("ok");
+});
+
 app.get("/flow", async (req, res) => {
   try {
     const { data } = await axios.get(FLOWS_URL, { headers: fetchHeaders });
