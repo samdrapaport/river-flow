@@ -147,6 +147,18 @@ function normalizeSectionParam(raw) {
   return s;
 }
 
+app.get("/", (_req, res) => {
+  res.json({
+    name: "river-flow",
+    status: "ok",
+    endpoints: {
+      health: "/health",
+      flow: "/flow",
+      filteredFlow: "/flow?section=California_North_Coast",
+    },
+  });
+});
+
 app.get("/health", (_req, res) => {
   res.status(200).type("text/plain").send("ok");
 });
