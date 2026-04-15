@@ -7,7 +7,7 @@ const PORT = process.env.PORT || 3000;
 
 const FLOWS_URL =
   "https://www.dreamflows.com/flows.php?zone=west&page=curr&form=comp&mark=All";
-const TABLE_COLUMNS = ["Section", "River", "Flow"];
+const TABLE_COLUMNS = ["Section", "River", "Flow", "GraphUrl"];
 /** Section anchors that are not river lists (Index lives under body; nextUntil would swallow the whole page). */
 const SKIP_SECTION_ANCHORS = new Set(["Index", "Symbols"]);
 
@@ -72,8 +72,14 @@ function parseRiverFromAnchor($, riverEl) {
     /<span[^>]*class\s*=\s*['"]Flow[^'"]*['"][^>]*>([^<]*)<\/span>/i
   );
   const flow = flowSpan ? flowSpan[1].replace(/\s+/g, " ").trim() : "";
+  const graphHref = $r.nextAll("a.Place").first().attr("href") || "";
+  const graphUrl = graphHref.startsWith("http")
+    ? graphHref
+    : graphHref
+      ? `https://www.dreamflows.com${graphHref}`
+      : "";
 
-  return { river, flow };
+  return { river, flow, graphUrl };
 }
 
 /** Document-order index: SecHeaders are not always siblings (Index is under body; others nest deeper), so nextUntil is unsafe. */
@@ -134,7 +140,7 @@ function collectAllSections($) {
       count: rows.length,
       table: {
         columns: TABLE_COLUMNS,
-        rows: rows.map((r) => [sectionName, r.river, r.flow]),
+        rows: rows.map((r) => [sectionName, r.river, r.flow, r.graphUrl]),
       },
     });
   }
