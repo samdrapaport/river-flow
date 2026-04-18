@@ -11,14 +11,57 @@ const TABLE_COLUMNS = ["Section", "River", "Flow", "GraphUrl"];
 /** Section anchors that are not river lists (Index lives under body; nextUntil would swallow the whole page). */
 const SKIP_SECTION_ANCHORS = new Set(["Index", "Symbols"]);
 
+/** Dreamflows often returns 403 to bare datacenter requests; mimic a real browser as closely as possible. */
 const fetchHeaders = {
   "User-Agent":
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
   Accept:
-    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Cache-Control": "no-cache",
+  Pragma: "no-cache",
+  DNT: "1",
+  "Upgrade-Insecure-Requests": "1",
   Referer: "https://www.dreamflows.com/",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "same-origin",
+  "Sec-Fetch-User": "?1",
+  "sec-ch-ua":
+    '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"macOS"',
 };
+
+const dreamflowsAxios = axios.create({
+  timeout: 45000,
+  maxRedirects: 5,
+  headers: fetchHeaders,
+});
+
+const minimalFetchHeaders = {
+  "User-Agent": fetchHeaders["User-Agent"],
+  Accept: fetchHeaders.Accept,
+  "Accept-Language": fetchHeaders["Accept-Language"],
+  Referer: fetchHeaders.Referer,
+};
+
+async function fetchDreamflowsHtml() {
+  try {
+    const { data } = await dreamflowsAxios.get(FLOWS_URL);
+    return data;
+  } catch (err) {
+    const status = err.response?.status;
+    if (status !== 403) throw err;
+    const { data } = await axios.get(FLOWS_URL, {
+      headers: minimalFetchHeaders,
+      timeout: 45000,
+      maxRedirects: 5,
+    });
+    return data;
+  }
+}
 
 /** Cheerio sibling iterators skip raw text nodes (e.g. " - " between links). */
 function serializeUntil($, firstEl, stopBeforeNode) {
@@ -171,7 +214,7 @@ app.get("/health", (_req, res) => {
 
 app.get("/flow", async (req, res) => {
   try {
-    const { data } = await axios.get(FLOWS_URL, { headers: fetchHeaders });
+    const data = await fetchDreamflowsHtml();
     const $ = cheerio.load(data);
     let sections = collectAllSections($);
 
@@ -202,7 +245,21 @@ app.get("/flow", async (req, res) => {
       sections,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const upstream = err.response?.status;
+    const body =
+      typeof err.response?.data === "string"
+        ? err.response.data.slice(0, 200)
+        : undefined;
+    const status = upstream ? 502 : 500;
+    res.status(status).json({
+      error: err.message,
+      ...(upstream && { upstreamStatus: upstream }),
+      ...(body && { upstreamBodyPreview: body }),
+      hint:
+        upstream === 403
+          ? "Dreamflows blocked this server (often datacenter IPs). Retry later, or run the API from another network / proxy."
+          : undefined,
+    });
   }
 });
 
